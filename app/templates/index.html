@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guestbook — {{ env_name }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- ENV BANNER                                                           -->
+  <!-- Color and name come from ENV_COLOR / ENV_NAME set in Helm values.  -->
+  <!-- This makes the environment instantly obvious during the demo.       -->
+  <!-- ------------------------------------------------------------------ -->
+  <header class="env-banner" style="background: {{ env_color }};">
+    <span class="env-label">{{ env_name }}</span>
+    <span class="version-tag">sha: {{ version }}</span>
+  </header>
+
+  <main>
+    <h1>Guestbook</h1>
+
+    <!-- POST FORM -->
+    <section class="card">
+      <h2>Leave a message</h2>
+      <form method="POST" action="/messages">
+        <div class="field">
+          <label for="name">Name</label>
+          <input
+            id="name"
+            name="name"
+            type="text"
+            placeholder="Your name"
+            required
+            maxlength="100"
+            autocomplete="off"
+          >
+        </div>
+        <div class="field">
+          <label for="message">Message</label>
+          <textarea
+            id="message"
+            name="message"
+            placeholder="Your message"
+            required
+            maxlength="500"
+            rows="3"
+          ></textarea>
+        </div>
+        <button type="submit">Post</button>
+      </form>
+    </section>
+
+    <!-- MESSAGE LIST -->
+    <section class="messages">
+      <h2>Messages</h2>
+      {% if messages %}
+        {% for msg in messages %}
+        <article class="message-card">
+          <div class="message-header">
+            <strong>{{ msg['name'] }}</strong>
+            <time>{{ msg['created_at'] }}</time>
+          </div>
+          <p>{{ msg['message'] }}</p>
+        </article>
+        {% endfor %}
+      {% else %}
+        <p class="empty">No messages yet — be the first.</p>
+      {% endif %}
+    </section>
+  </main>
+
+  <!-- ------------------------------------------------------------------ -->
+  <!-- FOOTER                                                               -->
+  <!-- pod_name  — injected by Kubernetes downward API.  Refresh the page  -->
+  <!--             to see the ALB cycle through pod replicas.              -->
+  <!-- db_status — 'connected' only when ESO has synced the secret AND     -->
+  <!--             SQLite is reachable. Visual proof ESO is working.       -->
+  <!-- ------------------------------------------------------------------ -->
+  <footer>
+    <span>pod: <code>{{ pod_name }}</code></span>
+    <span>db: <strong class="db-{{ db_status }}">{{ db_status }}</strong></span>
+  </footer>
+
+</body>
+</html>

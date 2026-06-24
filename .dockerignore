@@ -1,0 +1,37 @@
+# Git history — never ship this in an image.
+# It exposes every commit, branch, and author to anyone who
+# can pull the image.
+.git/
+.gitignore
+
+# Python bytecode and caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Local virtual environments
+venv/
+.venv/
+env/
+
+# Local SQLite data created during dev
+data/
+
+# Secrets and local config
+.env
+.env.*
+*.env
+
+# GitHub Actions workflows — not needed at runtime
+.github/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Docs — not needed in the image
+README.md
+CLAUDE.md
