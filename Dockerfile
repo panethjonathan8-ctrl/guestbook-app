@@ -35,8 +35,8 @@ ARG BUILT_AT=unknown
 # Non-root user. Default Docker behaviour is root, which means
 # a compromised container has root inside the host's kernel
 # namespace. A dedicated system user limits the blast radius.
-RUN addgroup --system appgroup && \
-    adduser --system --ingroup appgroup --no-create-home appuser
+RUN addgroup --system --gid 1001 appgroup && \
+    adduser --system --uid 1001 --ingroup appgroup --no-create-home appuser
 
 WORKDIR /app
 
