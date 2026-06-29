@@ -21,9 +21,34 @@ jobs:
         with:
           dockerfile: Dockerfile
 
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pytest
+        run: pip install pytest
+      - name: Run tests
+        # Exit code 5 means "no tests collected" — passes as a placeholder
+        # until real tests are written. All other non-zero codes fail the job.
+        # set +e disables the shell's "exit immediately on error" flag so we
+        # can capture pytest's exit code before deciding what to do with it.
+        run: |
+          set +e
+          pytest app/ -q
+          EXIT=$?
+          set -e
+          if [ $EXIT -eq 5 ]; then
+            echo "No tests found — placeholder passing until tests are written"
+            exit 0
+          fi
+          exit $EXIT
+
   build:
     runs-on: ubuntu-latest
-    needs: [lint, hadolint]
+    needs: [lint, hadolint, test]
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
