@@ -33,9 +33,13 @@ jobs:
       - name: Run tests
         # Exit code 5 means "no tests collected" — passes as a placeholder
         # until real tests are written. All other non-zero codes fail the job.
+        # set +e disables the shell's "exit immediately on error" flag so we
+        # can capture pytest's exit code before deciding what to do with it.
         run: |
+          set +e
           pytest app/ -q
           EXIT=$?
+          set -e
           if [ $EXIT -eq 5 ]; then
             echo "No tests found — placeholder passing until tests are written"
             exit 0
