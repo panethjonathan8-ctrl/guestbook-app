@@ -1,6 +1,9 @@
+import contextlib
 import logging
 import os
-import sqlite3
+
+import psycopg2
+import psycopg2.extras
 from flask import Flask, jsonify, redirect, render_template, request
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
@@ -10,52 +13,62 @@ app = Flask(__name__)
 # ---------------------------------------------------------------------------
 # Configuration from environment variables.
 # All of these are set by Helm/Kubernetes in production. Defaults let the app
-# run locally with no extra setup.
+# start cleanly with no extra setup (DATABASE_URL being empty means the app
+# starts but reports db: disconnected until ESO syncs the secret).
 # ---------------------------------------------------------------------------
-DB_PATH = os.environ.get("DB_PATH", "./data/guestbook.db")
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 ENV_NAME = os.environ.get("ENV_NAME", "local")
 ENV_COLOR = os.environ.get("ENV_COLOR", "#607D8B")   # grey = local
 VERSION = os.environ.get("VERSION", "dev")
 POD_NAME = os.environ.get("POD_NAME", "local")
 BUILT_AT = os.environ.get("BUILT_AT", "unknown")
-# DB_SECRET is synced from AWS Secrets Manager by the External Secrets
-# Operator.  When it is absent the footer shows "db: disconnected" so you
-# can see at a glance whether ESO is working.
-DB_SECRET = os.environ.get("DB_SECRET", "")
 
 
 # ---------------------------------------------------------------------------
 # Database helpers
 # ---------------------------------------------------------------------------
 
+@contextlib.contextmanager
+def get_db():
+    """Open a PostgreSQL connection, commit on success, rollback on error."""
+    conn = psycopg2.connect(DATABASE_URL)
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def init_db() -> None:
-    db_dir = os.path.dirname(DB_PATH)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS messages (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                name       TEXT NOT NULL,
-                message    TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS messages (
+                    id         SERIAL PRIMARY KEY,
+                    name       TEXT NOT NULL,
+                    message    TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+                """
             )
-            """
-        )
 
 
 def get_db_status() -> str:
     """
     Returns 'connected' only when both conditions are true:
-      1. The DB_SECRET env var is present (proves ESO synced the secret).
-      2. SQLite is actually reachable (proves the PVC is mounted).
+      1. DATABASE_URL is set (proves ESO synced the secret from Secrets Manager).
+      2. PostgreSQL is actually reachable (proves RDS is up and network is open).
     """
-    if not DB_SECRET:
+    if not DATABASE_URL:
         return "disconnected"
     try:
-        with sqlite3.connect(DB_PATH) as conn:
-            conn.execute("SELECT 1")
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
         return "connected"
     except Exception:
         return "disconnected"
@@ -64,7 +77,7 @@ def get_db_status() -> str:
 # Run once at import time so Gunicorn workers initialise the schema on startup.
 try:
     init_db()
-    logging.info("Database ready at %s", DB_PATH)
+    logging.info("Database ready")
 except Exception as exc:
     logging.warning("Database init deferred — will retry on first request: %s", exc)
 
@@ -88,11 +101,12 @@ def version():
 @app.get("/messages")
 def get_messages():
     """JSON list of all messages, newest first."""
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(
-            "SELECT id, name, message, created_at FROM messages ORDER BY id DESC"
-        ).fetchall()
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT id, name, message, created_at FROM messages ORDER BY id DESC"
+            )
+            rows = cur.fetchall()
     return jsonify([dict(r) for r in rows])
 
 
@@ -116,11 +130,13 @@ def post_message():
             return jsonify({"error": "name and message are required"}), 400
         return redirect("/")
 
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(
-            "INSERT INTO messages (name, message) VALUES (?, ?)",
-            (name, message),
-        )
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            # %s placeholders are the PostgreSQL standard (not ? like SQLite).
+            cur.execute(
+                "INSERT INTO messages (name, message) VALUES (%s, %s)",
+                (name, message),
+            )
 
     if request.is_json:
         return jsonify({"status": "ok"}), 201
@@ -135,11 +151,16 @@ def index():
     except Exception as exc:
         logging.error("DB init failed on request: %s", exc)
 
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        messages = conn.execute(
-            "SELECT name, message, created_at FROM messages ORDER BY id DESC"
-        ).fetchall()
+    messages = []
+    try:
+        with get_db() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT name, message, created_at FROM messages ORDER BY id DESC"
+                )
+                messages = cur.fetchall()
+    except Exception as exc:
+        logging.error("Failed to fetch messages: %s", exc)
 
     return render_template(
         "index.html",

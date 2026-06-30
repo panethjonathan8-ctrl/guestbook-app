@@ -51,11 +51,8 @@ ENV PATH="/venv/bin:$PATH" \
     # Baked-in image metadata exposed by GET /version
     VERSION=${GIT_SHA} \
     BUILT_AT=${BUILT_AT} \
-    # Default DB path — overridden by Helm to /data/guestbook.db
-    # which is where the EBS-backed PVC is mounted in Kubernetes.
-    DB_PATH=/data/guestbook.db \
     # Disable Python stdout buffering so logs appear immediately
-    # in `kubectl logs` and CloudWatch.
+    # in `kubectl logs`.
     PYTHONUNBUFFERED=1 \
     # Do not write .pyc bytecode files — unnecessary in a container.
     PYTHONDONTWRITEBYTECODE=1
