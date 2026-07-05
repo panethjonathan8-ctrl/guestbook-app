@@ -3,6 +3,18 @@ name: Deploy
 on:
   push:
     branches: [main]
+    # Allow-list: only run this pipeline (build, push to ECR, deploy to
+    # dev/staging/prod) when something that can actually change the running
+    # app is touched. Without this, every merge to main — including
+    # docs-only or tooling-only changes like release-please's own version
+    # bump PRs — triggers a full no-op rebuild/redeploy of an unchanged
+    # container (see issue #18).
+    paths:
+      - "app/**"
+      - "Dockerfile"
+      - "requirements.txt"
+      - "scripts/**"
+      - ".github/workflows/deploy.yml"
 
 # Prevent two pipeline runs from writing to the gitops repo simultaneously.
 # cancel-in-progress: false queues the second run rather than dropping it.
