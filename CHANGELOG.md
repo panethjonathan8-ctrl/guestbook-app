@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/panethjonathan8-ctrl/guestbook-app/compare/v1.0.0...v1.0.1) (2026-07-05)
+
+
+### Bug Fixes
+
+* scope deploy workflow trigger to actual app changes ([#19](https://github.com/panethjonathan8-ctrl/guestbook-app/issues/19)) ([a147605](https://github.com/panethjonathan8-ctrl/guestbook-app/commit/a147605c554431fc4faf8bac7b332857a691379d)), closes [#18](https://github.com/panethjonathan8-ctrl/guestbook-app/issues/18)
+
 ## 1.0.0 (2026-07-05)
 
 
