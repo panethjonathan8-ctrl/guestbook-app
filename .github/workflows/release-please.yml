@@ -4,25 +4,230 @@ name: release-please
 # the Conventional Commit messages since the last release tag and opens/
 # updates a single "chore: release X.Y.Z" PR with the computed version bump
 # and changelog. Merging that PR is what actually creates the git tag and
-# GitHub Release — this workflow never tags anything by itself.
+# GitHub Release.
+#
+# The moment that merge cuts a real release, this workflow also promotes it
+# to staging and prod. It does NOT rebuild anything: it finds the dev image
+# already built (by deploy.yml) for the release's underlying app code, adds
+# the release version as a second tag on that same image in ECR, and deploys
+# that. Dev is untouched here — it deploys continuously on every push via
+# deploy.yml, independent of releases.
+#
+# release-please's own commits/tags are made with the default GITHUB_TOKEN,
+# which GitHub deliberately does not let trigger further workflow runs (to
+# avoid recursive triggering). That's not a problem for this design: the
+# jobs below run inside this SAME workflow run, reading release-please's
+# step outputs directly — nothing needs to be triggered by a second event.
 on:
   push:
     branches:
       - main
 
-# contents: write  -> push the release branch / create the tag
-# pull-requests: write -> open/update the Release PR
-# Scoped to this workflow only; the repo-wide default token permission
-# stays "read" for every other workflow.
+# Ceiling for what any job below may request. Each job narrows this down to
+# only what it actually needs.
 permissions:
   contents: write
   pull-requests: write
+  id-token: write
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  # ---------------------------------------------------------------------------
+  # Figure out which already-built dev image (by its git-SHA tag) belongs to
+  # this release, and whether anything app-relevant changed since the last
+  # release at all. See scripts/resolve-release-image.sh for why this can't
+  # just be "the image built at this tag" — release-please's own commit only
+  # touches CHANGELOG.md/VERSION, never app/ or Dockerfile.
+  # ---------------------------------------------------------------------------
+  resolve-image:
+    runs-on: ubuntu-latest
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    permissions:
+      contents: read
+    outputs:
+      source_sha: ${{ steps.resolve.outputs.source_sha }}
+      changed: ${{ steps.resolve.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history required — the script walks tags and commit log.
+          fetch-depth: 0
+
+      - name: Resolve release image
+        id: resolve
+        run: |
+          chmod +x scripts/resolve-release-image.sh
+          ./scripts/resolve-release-image.sh "${{ needs.release-please.outputs.tag_name }}"
+
+  # ---------------------------------------------------------------------------
+  # Promote to staging. Retags the existing dev image with the release
+  # version — no rebuild — so staging runs the exact bytes dev already ran.
+  # ---------------------------------------------------------------------------
+  promote-staging:
+    runs-on: ubuntu-latest
+    needs: [release-please, resolve-image]
+    if: needs.resolve-image.outputs.changed == 'true'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Retag dev image with release version
+        run: |
+          chmod +x scripts/retag-ecr-image.sh
+          ./scripts/retag-ecr-image.sh guestbook \
+            "${{ needs.resolve-image.outputs.source_sha }}" \
+            "${{ needs.release-please.outputs.version }}"
+
+      - name: Checkout gitops repo
+        uses: actions/checkout@v7
+        with:
+          repository: panethjonathan8-ctrl/guestbook-gitops
+          token: ${{ secrets.GH_DEPLOY_PAT }}
+          path: gitops
+
+      - name: Update staging image tag
+        run: |
+          sed -i 's|tag: ".*"|tag: "${{ needs.release-please.outputs.version }}"|' \
+            gitops/charts/guestbook/values-staging.yaml
+
+      - name: Commit and push to gitops
+        run: |
+          cd gitops
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add charts/guestbook/values-staging.yaml
+          if git diff --staged --quiet; then
+            echo "Image tag unchanged — skipping commit"
+          else
+            git commit -m "deploy(staging): guestbook@${{ needs.release-please.outputs.version }}"
+            git push
+          fi
+
+      - name: Update kubeconfig for dev cluster
+        run: aws eks update-kubeconfig --region ${{ vars.AWS_REGION }} --name ${{ vars.DEV_EKS_CLUSTER_NAME }}
+
+      - name: Trigger ArgoCD sync and wait for healthy
+        run: |
+          kubectl patch application guestbook-staging -n argocd \
+            -p '{"operation":{"sync":{"revision":"HEAD"}}}' --type=merge
+
+          for i in $(seq 1 30); do
+            SYNC=$(kubectl get application guestbook-staging -n argocd \
+              -o jsonpath='{.status.sync.status}')
+            HEALTH=$(kubectl get application guestbook-staging -n argocd \
+              -o jsonpath='{.status.health.status}')
+            echo "[$i/30] sync=$SYNC health=$HEALTH"
+            [ "$SYNC" = "Synced" ] && [ "$HEALTH" = "Healthy" ] && exit 0
+            [ "$i" = "30" ] && echo "Timeout waiting for ArgoCD sync" && exit 1
+            sleep 10
+          done
+
+      - name: HTTP smoke test
+        run: |
+          ALB=$(kubectl get ingress nginx-alb -n ingress-nginx \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          chmod +x scripts/smoke-test.sh
+          ./scripts/smoke-test.sh "$ALB" "staging.guestbook.example.com"
+
+      - name: DB smoke test
+        run: |
+          ALB=$(kubectl get ingress nginx-alb -n ingress-nginx \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          chmod +x scripts/db-smoke-test.sh
+          ./scripts/db-smoke-test.sh "$ALB" "staging.guestbook.example.com"
+
+  # ---------------------------------------------------------------------------
+  # Promote to prod. Reuses the SAME version tag staging just validated —
+  # no rebuild, no second retag. The tag already exists in ECR from the
+  # staging step above.
+  # ---------------------------------------------------------------------------
+  promote-prod:
+    runs-on: ubuntu-latest
+    needs: [release-please, resolve-image, promote-staging]
+    environment: prod
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Checkout gitops repo
+        uses: actions/checkout@v7
+        with:
+          repository: panethjonathan8-ctrl/guestbook-gitops
+          token: ${{ secrets.GH_DEPLOY_PAT }}
+          path: gitops
+
+      - name: Update prod image tag
+        run: |
+          sed -i 's|tag: ".*"|tag: "${{ needs.release-please.outputs.version }}"|' \
+            gitops/charts/guestbook/values-prod.yaml
+
+      - name: Commit and push to gitops
+        run: |
+          cd gitops
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add charts/guestbook/values-prod.yaml
+          if git diff --staged --quiet; then
+            echo "Image tag unchanged — skipping commit"
+          else
+            git commit -m "deploy(prod): guestbook@${{ needs.release-please.outputs.version }}"
+            git push
+          fi
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Update kubeconfig for prod cluster
+        run: aws eks update-kubeconfig --region ${{ vars.AWS_REGION }} --name ${{ vars.PROD_EKS_CLUSTER_NAME }}
+
+      - name: Trigger ArgoCD sync and wait for healthy
+        run: |
+          kubectl patch application guestbook-prod -n argocd \
+            -p '{"operation":{"sync":{"revision":"HEAD"}}}' --type=merge
+
+          for i in $(seq 1 30); do
+            SYNC=$(kubectl get application guestbook-prod -n argocd \
+              -o jsonpath='{.status.sync.status}')
+            HEALTH=$(kubectl get application guestbook-prod -n argocd \
+              -o jsonpath='{.status.health.status}')
+            echo "[$i/30] sync=$SYNC health=$HEALTH"
+            [ "$SYNC" = "Synced" ] && [ "$HEALTH" = "Healthy" ] && exit 0
+            [ "$i" = "30" ] && echo "Timeout waiting for ArgoCD sync" && exit 1
+            sleep 10
+          done
+
+      - name: HTTP smoke test
+        run: |
+          ALB=$(kubectl get ingress nginx-alb -n ingress-nginx \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          chmod +x scripts/smoke-test.sh
+          ./scripts/smoke-test.sh "$ALB" "guestbook.example.com"
