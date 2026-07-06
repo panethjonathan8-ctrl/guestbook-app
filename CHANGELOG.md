@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/panethjonathan8-ctrl/guestbook-app/compare/v1.0.1...v1.1.0) (2026-07-06)
+
+
+### Features
+
+* promote staging/prod by retagging release images instead of rebuilding ([#22](https://github.com/panethjonathan8-ctrl/guestbook-app/issues/22)) ([1e9c876](https://github.com/panethjonathan8-ctrl/guestbook-app/commit/1e9c876b0d2fb31e8acba898c47ecd754dd5e3fd)), closes [#21](https://github.com/panethjonathan8-ctrl/guestbook-app/issues/21)
+
 ## [1.0.1](https://github.com/panethjonathan8-ctrl/guestbook-app/compare/v1.0.0...v1.0.1) (2026-07-05)
 
 
