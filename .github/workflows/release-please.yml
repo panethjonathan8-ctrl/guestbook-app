@@ -13,11 +13,15 @@ name: release-please
 # that. Dev is untouched here — it deploys continuously on every push via
 # deploy.yml, independent of releases.
 #
-# release-please's own commits/tags are made with the default GITHUB_TOKEN,
-# which GitHub deliberately does not let trigger further workflow runs (to
-# avoid recursive triggering). That's not a problem for this design: the
-# jobs below run inside this SAME workflow run, reading release-please's
-# step outputs directly — nothing needs to be triggered by a second event.
+# release-please-action authenticates with a PAT (GH_RELEASE_PAT), not the
+# default GITHUB_TOKEN. GitHub deliberately blocks workflows from actually
+# running when triggered by content authored via the default GITHUB_TOKEN —
+# without a real PAT, ci.yml's pull_request trigger would never fire on the
+# Release PR, so its required checks (build/hadolint/lint/test) could never
+# pass, and auto-merge would wait forever. This is a separate concern from
+# the jobs below (resolve-image/promote-staging/promote-prod), which run
+# inside this SAME workflow run reading release-please's step outputs
+# directly — those never depended on a second triggered event.
 on:
   push:
     branches:
@@ -44,17 +48,22 @@ jobs:
       - uses: googleapis/release-please-action@v4
         id: release
         with:
+          token: ${{ secrets.GH_RELEASE_PAT }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
       # Only needed to get scripts/automerge-release-pr.sh onto the runner —
       # release-please-action itself talks to the GitHub API directly and
       # never needed a checkout.
+      #
+      # Runs unconditionally (not gated on prs_created) — a Release PR can
+      # already be open from an earlier run that didn't touch it (e.g. a
+      # hidden-type commit release-please decided not to update the PR for).
+      # automerge-release-pr.sh already no-ops safely if no PR is open, so
+      # there's no need to guess whether this run touched one.
       - uses: actions/checkout@v7
-        if: steps.release.outputs.prs_created == 'true'
 
       - name: Auto-merge the Release PR
-        if: steps.release.outputs.prs_created == 'true'
         run: |
           chmod +x scripts/automerge-release-pr.sh
           ./scripts/automerge-release-pr.sh
