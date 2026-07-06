@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/panethjonathan8-ctrl/guestbook-app/compare/v1.1.2...v1.2.0) (2026-07-06)
+
+
+### Features
+
+* add /stats endpoint returning total message count ([#35](https://github.com/panethjonathan8-ctrl/guestbook-app/issues/35)) ([0d914fc](https://github.com/panethjonathan8-ctrl/guestbook-app/commit/0d914fcbfbb7f09849337ff82c17c6f8ed29c840)), closes [#32](https://github.com/panethjonathan8-ctrl/guestbook-app/issues/32)
+
 ## [1.1.2](https://github.com/panethjonathan8-ctrl/guestbook-app/compare/v1.1.1...v1.1.2) (2026-07-06)
 
 
