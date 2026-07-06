@@ -17,12 +17,17 @@ repos:
         language: pygrep
         entry: '(AKIA[0-9A-Z]{16}|aws_secret_access_key\s*=\s*[A-Za-z0-9/+]{40}|-----BEGIN .* PRIVATE KEY-----)'
         types: [text]
+        # This file is the one place these patterns must legitimately exist
+        # as literal text (they're the detection rule itself). Without this
+        # exclude, the greedy ".*" in the private-key alternative matches its
+        # own source line, and .pre-commit-config.yaml can never be committed.
+        exclude: '^\.pre-commit-config\.yaml$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.9.10
     hooks:
       - id: ruff
-        args: [check, app/]
+        args: [app/]
 
   - repo: https://github.com/hadolint/hadolint
     rev: v2.12.0
