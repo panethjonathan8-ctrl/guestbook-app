@@ -63,12 +63,19 @@ jobs:
       # there's no need to guess whether this run touched one.
       - uses: actions/checkout@v7
 
+      # Uses GH_RELEASE_PAT, not the default GITHUB_TOKEN — GitHub's
+      # anti-recursion protection blocks further workflow runs from being
+      # triggered by anything performed via GITHUB_TOKEN, and that turned
+      # out to include auto-merges scheduled with it, not just direct
+      # pushes. Without this, the Release PR merges but release-please.yml
+      # never runs again — no tag, no GitHub Release, no staging/prod
+      # promotion, even though the merge itself looks clean.
       - name: Auto-merge the Release PR
         run: |
           chmod +x scripts/automerge-release-pr.sh
           ./scripts/automerge-release-pr.sh
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_RELEASE_PAT }}
           GH_REPO: ${{ github.repository }}
 
   # ---------------------------------------------------------------------------
