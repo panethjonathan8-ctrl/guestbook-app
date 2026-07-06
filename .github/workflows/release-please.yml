@@ -47,6 +47,21 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+      # Only needed to get scripts/automerge-release-pr.sh onto the runner —
+      # release-please-action itself talks to the GitHub API directly and
+      # never needed a checkout.
+      - uses: actions/checkout@v7
+        if: steps.release.outputs.prs_created == 'true'
+
+      - name: Auto-merge the Release PR
+        if: steps.release.outputs.prs_created == 'true'
+        run: |
+          chmod +x scripts/automerge-release-pr.sh
+          ./scripts/automerge-release-pr.sh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+
   # ---------------------------------------------------------------------------
   # Figure out which already-built dev image (by its git-SHA tag) belongs to
   # this release, and whether anything app-relevant changed since the last
