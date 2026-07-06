@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/panethjonathan8-ctrl/guestbook-app/compare/v1.2.0...v1.2.1) (2026-07-06)
+
+
+### Bug Fixes
+
+* correct promote-prod smoke test hostname ([#38](https://github.com/panethjonathan8-ctrl/guestbook-app/issues/38)) ([5322340](https://github.com/panethjonathan8-ctrl/guestbook-app/commit/5322340e0d5b22bd458c597e3e1ad1fd8230857c)), closes [#37](https://github.com/panethjonathan8-ctrl/guestbook-app/issues/37)
+
 ## [1.2.0](https://github.com/panethjonathan8-ctrl/guestbook-app/compare/v1.1.2...v1.2.0) (2026-07-06)
 
 
