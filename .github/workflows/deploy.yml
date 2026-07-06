@@ -1,14 +1,22 @@
 name: Deploy
 
+# Dev only. Every push to main that touches app code builds a fresh image,
+# tags it with the git short SHA, and deploys straight to dev — this is the
+# fast-feedback lane, deliberately untagged by version number.
+#
+# Staging and prod do NOT come from this workflow. They're promoted from
+# release-please.yml, only when a release is actually cut, by retagging the
+# dev image this workflow already built — never by rebuilding. See
+# release-please.yml for that flow and why it works this way.
 on:
   push:
     branches: [main]
-    # Allow-list: only run this pipeline (build, push to ECR, deploy to
-    # dev/staging/prod) when something that can actually change the running
-    # app is touched. Without this, every merge to main — including
-    # docs-only or tooling-only changes like release-please's own version
-    # bump PRs — triggers a full no-op rebuild/redeploy of an unchanged
-    # container (see issue #18).
+    # Allow-list: only run this pipeline (build, push to ECR, deploy to dev)
+    # when something that can actually change the running app is touched.
+    # Without this, every merge to main — including docs-only or
+    # tooling-only changes like release-please's own version bump PRs —
+    # triggers a full no-op rebuild/redeploy of an unchanged container (see
+    # issue #18).
     paths:
       - "app/**"
       - "Dockerfile"
@@ -129,145 +137,3 @@ jobs:
             -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
           chmod +x scripts/smoke-test.sh
           ./scripts/smoke-test.sh "$ALB" "dev.guestbook.example.com"
-
-  # ---------------------------------------------------------------------------
-  # Deploy to staging (same cluster as dev, different namespace).
-  # Runs HTTP + DB smoke tests — staging is the first env with a real DB path.
-  # ---------------------------------------------------------------------------
-  promote-staging:
-    runs-on: ubuntu-latest
-    needs: [build, promote-dev]
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Checkout gitops repo
-        uses: actions/checkout@v7
-        with:
-          repository: panethjonathan8-ctrl/guestbook-gitops
-          token: ${{ secrets.GH_DEPLOY_PAT }}
-          path: gitops
-
-      - name: Update staging image tag
-        run: |
-          sed -i 's|tag: ".*"|tag: "${{ needs.build.outputs.image_tag }}"|' \
-            gitops/charts/guestbook/values-staging.yaml
-
-      - name: Commit and push to gitops
-        run: |
-          cd gitops
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add charts/guestbook/values-staging.yaml
-          if git diff --staged --quiet; then
-            echo "Image tag unchanged — skipping commit"
-          else
-            git commit -m "deploy(staging): guestbook@${{ needs.build.outputs.image_tag }}"
-            git push
-          fi
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-
-      - name: Update kubeconfig for dev cluster
-        run: aws eks update-kubeconfig --region ${{ vars.AWS_REGION }} --name ${{ vars.DEV_EKS_CLUSTER_NAME }}
-
-      - name: Trigger ArgoCD sync and wait for healthy
-        run: |
-          kubectl patch application guestbook-staging -n argocd \
-            -p '{"operation":{"sync":{"revision":"HEAD"}}}' --type=merge
-
-          for i in $(seq 1 30); do
-            SYNC=$(kubectl get application guestbook-staging -n argocd \
-              -o jsonpath='{.status.sync.status}')
-            HEALTH=$(kubectl get application guestbook-staging -n argocd \
-              -o jsonpath='{.status.health.status}')
-            echo "[$i/30] sync=$SYNC health=$HEALTH"
-            [ "$SYNC" = "Synced" ] && [ "$HEALTH" = "Healthy" ] && exit 0
-            [ "$i" = "30" ] && echo "Timeout waiting for ArgoCD sync" && exit 1
-            sleep 10
-          done
-
-      - name: HTTP smoke test
-        run: |
-          ALB=$(kubectl get ingress nginx-alb -n ingress-nginx \
-            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-          chmod +x scripts/smoke-test.sh
-          ./scripts/smoke-test.sh "$ALB" "staging.guestbook.example.com"
-
-      - name: DB smoke test
-        run: |
-          ALB=$(kubectl get ingress nginx-alb -n ingress-nginx \
-            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-          chmod +x scripts/db-smoke-test.sh
-          ./scripts/db-smoke-test.sh "$ALB" "staging.guestbook.example.com"
-
-  # ---------------------------------------------------------------------------
-  # Deploy to prod — on a separate cluster.
-  # Pauses for a human to approve in the GitHub Actions UI before proceeding.
-  # ---------------------------------------------------------------------------
-  promote-prod:
-    runs-on: ubuntu-latest
-    needs: [build, promote-staging]
-    environment: prod
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Checkout gitops repo
-        uses: actions/checkout@v7
-        with:
-          repository: panethjonathan8-ctrl/guestbook-gitops
-          token: ${{ secrets.GH_DEPLOY_PAT }}
-          path: gitops
-
-      - name: Update prod image tag
-        run: |
-          sed -i 's|tag: ".*"|tag: "${{ needs.build.outputs.image_tag }}"|' \
-            gitops/charts/guestbook/values-prod.yaml
-
-      - name: Commit and push to gitops
-        run: |
-          cd gitops
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add charts/guestbook/values-prod.yaml
-          if git diff --staged --quiet; then
-            echo "Image tag unchanged — skipping commit"
-          else
-            git commit -m "deploy(prod): guestbook@${{ needs.build.outputs.image_tag }}"
-            git push
-          fi
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-
-      - name: Update kubeconfig for prod cluster
-        run: aws eks update-kubeconfig --region ${{ vars.AWS_REGION }} --name ${{ vars.PROD_EKS_CLUSTER_NAME }}
-
-      - name: Trigger ArgoCD sync and wait for healthy
-        run: |
-          kubectl patch application guestbook-prod -n argocd \
-            -p '{"operation":{"sync":{"revision":"HEAD"}}}' --type=merge
-
-          for i in $(seq 1 30); do
-            SYNC=$(kubectl get application guestbook-prod -n argocd \
-              -o jsonpath='{.status.sync.status}')
-            HEALTH=$(kubectl get application guestbook-prod -n argocd \
-              -o jsonpath='{.status.health.status}')
-            echo "[$i/30] sync=$SYNC health=$HEALTH"
-            [ "$SYNC" = "Synced" ] && [ "$HEALTH" = "Healthy" ] && exit 0
-            [ "$i" = "30" ] && echo "Timeout waiting for ArgoCD sync" && exit 1
-            sleep 10
-          done
-
-      - name: HTTP smoke test
-        run: |
-          ALB=$(kubectl get ingress nginx-alb -n ingress-nginx \
-            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-          chmod +x scripts/smoke-test.sh
-          ./scripts/smoke-test.sh "$ALB" "guestbook.example.com"
