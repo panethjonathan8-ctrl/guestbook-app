@@ -98,6 +98,16 @@ def version():
     return jsonify({"git_sha": VERSION, "built_at": BUILT_AT})
 
 
+@app.get("/stats")
+def stats():
+    """Returns the total number of messages currently stored."""
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM messages")
+            total = cur.fetchone()[0]
+    return jsonify({"total_messages": total})
+
+
 @app.get("/messages")
 def get_messages():
     """JSON list of all messages, newest first."""
