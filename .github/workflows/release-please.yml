@@ -261,4 +261,4 @@ jobs:
           ALB=$(kubectl get ingress nginx-alb -n ingress-nginx \
             -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
           chmod +x scripts/smoke-test.sh
-          ./scripts/smoke-test.sh "$ALB" "guestbook.example.com"
+          ./scripts/smoke-test.sh "$ALB" "www.guestbookinterview.lol"
