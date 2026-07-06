@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/panethjonathan8-ctrl/guestbook-app/compare/v1.1.0...v1.1.1) (2026-07-06)
+
+
+### Bug Fixes
+
+* authenticate release-please with a PAT so its Release PR gets real CI ([#27](https://github.com/panethjonathan8-ctrl/guestbook-app/issues/27)) ([b117fb7](https://github.com/panethjonathan8-ctrl/guestbook-app/commit/b117fb77e52902269bfc0d91ba3ec4e9c431f130)), closes [#26](https://github.com/panethjonathan8-ctrl/guestbook-app/issues/26)
+
 ## [1.1.0](https://github.com/panethjonathan8-ctrl/guestbook-app/compare/v1.0.1...v1.1.0) (2026-07-06)
 
 
