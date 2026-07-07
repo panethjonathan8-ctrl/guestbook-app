@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2](https://github.com/panethjonathan8-ctrl/guestbook-app/compare/v1.2.1...v1.2.2) (2026-07-07)
+
+
+### Bug Fixes
+
+* resync VERSION with release-please manifest, add README ([#41](https://github.com/panethjonathan8-ctrl/guestbook-app/issues/41)) ([b2d7a3c](https://github.com/panethjonathan8-ctrl/guestbook-app/commit/b2d7a3cb6062d044613b331ca6c4933be8aa4be8)), closes [#40](https://github.com/panethjonathan8-ctrl/guestbook-app/issues/40)
+
 ## [1.2.1](https://github.com/panethjonathan8-ctrl/guestbook-app/compare/v1.2.0...v1.2.1) (2026-07-06)
 
 
