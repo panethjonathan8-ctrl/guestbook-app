@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.3](https://github.com/panethjonathan8-ctrl/guestbook-app/compare/v1.2.2...v1.2.3) (2026-07-08)
+
+
+### Bug Fixes
+
+* use real DNS hostnames in smoke tests instead of stale placeholders ([#44](https://github.com/panethjonathan8-ctrl/guestbook-app/issues/44)) ([4f0b303](https://github.com/panethjonathan8-ctrl/guestbook-app/commit/4f0b303af3c1406b5eb13b6ed0122abdf2b8c4e0))
+
 ## [1.2.2](https://github.com/panethjonathan8-ctrl/guestbook-app/compare/v1.2.1...v1.2.2) (2026-07-07)
 
 
