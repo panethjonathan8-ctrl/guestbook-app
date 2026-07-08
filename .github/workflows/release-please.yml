@@ -182,14 +182,14 @@ jobs:
           ALB=$(kubectl get ingress nginx-alb -n ingress-nginx \
             -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
           chmod +x scripts/smoke-test.sh
-          ./scripts/smoke-test.sh "$ALB" "staging.guestbook.example.com"
+          ./scripts/smoke-test.sh "$ALB" "staging.guestbookinterview.lol"
 
       - name: DB smoke test
         run: |
           ALB=$(kubectl get ingress nginx-alb -n ingress-nginx \
             -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
           chmod +x scripts/db-smoke-test.sh
-          ./scripts/db-smoke-test.sh "$ALB" "staging.guestbook.example.com"
+          ./scripts/db-smoke-test.sh "$ALB" "staging.guestbookinterview.lol"
 
   # ---------------------------------------------------------------------------
   # Promote to prod. Reuses the SAME version tag staging just validated —
